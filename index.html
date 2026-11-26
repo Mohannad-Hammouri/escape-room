@@ -789,7 +789,7 @@ Object.assign(GENX,{
  radar(id,lvl){const gl=shuffle(range(GLYPHS.length)).slice(0,8);const k=[2,3,3][lvl];const tg=shuffle(range(8)).slice(0,k);
   const rule=lvl===0?'fwd':lvl===1?pick(['fwd','rev']):pick(['rev','before']);
   const exp=rule==='rev'?tg.slice().reverse():rule==='before'?tg.map(s=>(s+7)%8):tg.slice();
-  return{id,type:'radar',lvl,ans:exp.join(','),data:{gl,P:[7000,6000,5200][lvl],t0:performance.now(),exp,prog:0,flash:0,ok:0},clues:[{k:'rtargets',g:tg.map(s=>gl[s])},{k:'rrule',rule}],control:{k:'fire',len:k}}},
+  return{id,type:'radar',lvl,ans:exp.join(','),data:{gl,P:[8000,7000,6000][lvl],t0:performance.now(),exp,prog:0,flash:0,ok:0},clues:[{k:'rtargets',g:tg.map(s=>gl[s])},{k:'rrule',rule}],control:{k:'fire',len:k}}},
  laser(id,lvl){const n=[4,5,5][lvl];
   for(let t=0;t<500;t++){const er=rnd(n);let r=er,c=0,dir='E';const path=[],mir={};const used=new Set();let ok=true;
    while(r>=0&&r<n&&c>=0&&c<n){if(used.has(r*n+c)){ok=false;break}used.add(r*n+c);path.push(r*n+c);
@@ -892,8 +892,10 @@ function viewFor(pid){
    cards.push(Object.assign({key:z.id+':'+i,nw:lk?1:0},z.clues[i]))});
   if(z.ctrl===pid){const c=Object.assign({id:z.id,type:z.type,title:TITLES[z.type]},z.control);if(z.type==='wires')c.cut=z.data.cut.slice();if(z.type==='map')c.opened=z.data.opened.slice();if(z.type==='maze')c.pos=z.data.pos;if(z.type==='seal')c.tried=z.data.tried.slice();if(z.type==='radar'||z.type==='sparks')c.prog=z.data.prog;if(z.type==='laser')c.st=z.data.st.slice();if(z.type==='slide')c.b=z.data.b.slice();
    const pend=z.locks.filter(l=>!l.open).map(l=>{const s=R.puzzles.find(q=>q.id===l.from);return s?TITLES[s.type]:''});if(pend.length)c.wait=pend;ctrls.push(c)}});
- if(R.door&&!R.done&&R.door.holder===pid&&!R.door.inserted){cards.push({key:R.door.id,k:'need',item:R.door.item,hold:R.door.needHold?1:0});ctrls.push({k:'door',id:R.door.id,item:R.door.item})}
- if(R.door&&R.door.inserted&&R.door.needHold&&!R.done)v.hold={n:R.door.holdN||0,req:R.door.req};
+ if(R.door&&!R.done&&!R.door.inserted&&(G.bags[pid]||[]).includes(R.door.item))ctrls.unshift({k:'door',id:R.door.id,item:R.door.item,left:R.puzzles.filter(q=>!q.solved).map(q=>TITLES[q.type])});
+ if(R.door&&!R.done&&R.door.inserted&&!R.door.armed)v.doorWait={item:R.door.item,left:R.puzzles.filter(q=>!q.solved).map(q=>TITLES[q.type])};
+ v.pong=p.pong||0;
+ if(R.door&&R.door.armed&&R.door.needHold&&!R.done)v.hold={n:R.door.holdN||0,req:R.door.req};
  v.cards=cards;v.ctrls=ctrls;v.bag=(G.bags[pid]||[]).slice();v.mates=activePlayers().filter(q=>q.id!==pid).map(q=>({id:q.id,n:q.name}));
  if(p.ab&&!R.tut)v.ab={k:p.ab,used:p.abUsed?1:0};
  if(R.tut)v.coach=1;
@@ -904,6 +906,7 @@ function viewFor(pid){
 function act(pid,a){
  const p=G.players[pid];if(!p||!a||typeof a!=='object')return;
  const now=performance.now();
+ if(a.t==='ping'){if(typeof a.c==='number'){p.pong=a.c;dirty()}return}
  if(a.t==='vote'){if(G.phase==='vote'&&isActive(p)&&(a.v==='easy'||a.v==='hard')){G.vote.votes[pid]=a.v;renderVote();dirty()}return}
  if(a.t==='sab'){if(G.mode==='two'&&G.phase==='play'&&G.running&&!isActive(p)&&(G.sab[p.team]||0)>0){G.sab[p.team]--;G.blackoutUntil=now+5000;W.shake(.4);toast(p.name+' شوّش! الضو انقطع','bad');sfx.err();say('n_sabotage',{prio:2});fx('bad');dirty()}return}
  if(a.t==='bet'){placeBet(pid,a.id,a.v);return}
@@ -913,13 +916,11 @@ function act(pid,a){
  if(z&&!z.solved&&z.ctrl===pid){handlePuzzle(z,pid,a);return}
  if(a.t==='give'){const bag=G.bags[pid]||[];const k=bag.indexOf(a.item);const to=G.players[a.to];if(k<0||!to||!isActive(to)||to.id===pid)return;
   bag.splice(k,1);(G.bags[to.id]=G.bags[to.id]||[]).push(a.item);p.gives++;R.log.push({from:pid,to:to.id,item:a.item});G.lastProg=now;toast(p.name+' بعت «'+a.item+'» لـ'+to.name);sfx.whoosh();dirty();return}
- if(a.t==='door'&&R.door&&a.id===R.door.id&&R.door.holder===pid&&!R.done&&!R.door.inserted){
-  if(R.puzzles.some(q=>!q.solved)){toast('الباب لسا مقفول… في لغز ناقص','bad');sfx.err();return}
-  const bag=G.bags[pid]||[];const k=bag.indexOf(R.door.item);
-  if(k<0){toast(p.name+' محتاج «'+R.door.item+'» عشان يفتح الباب','bad');sfx.err();return}
-  bag.splice(k,1);R.door.inserted=true;G.lastProg=now;sfx.chain();
-  if(R.door.needHold){toast('القفل الأخير: كلكم اضغطوا مع بعض!','chain');say('n_hold',{prio:3});W.holdMode(true);dirty()}
-  else roomDone();
+ if(a.t==='door'&&R.door&&a.id===R.door.id&&!R.done&&!R.door.inserted){
+  const bag=G.bags[pid]||[];const k=bag.indexOf(R.door.item);if(k<0)return;
+  bag.splice(k,1);R.door.inserted=true;R.door.by=pid;G.lastProg=now;sfx.chain();
+  const left=R.puzzles.filter(q=>!q.solved);if(left.length)toast(p.name+' ركّب «'+R.door.item+'». الباب بيفتح لما تحلّوا: '+left.map(q=>TITLES[q.type]).join('، '),'chain');
+  doorCheck();dirty();
  }
 }
 function handlePuzzle(z,pid,a){const t=z.type;
@@ -931,14 +932,14 @@ function handlePuzzle(z,pid,a){const t=z.type;
   const k=c+D[0];z.data.pos=k;W.act(z.id,'pos',k);G.lastProg=performance.now();
   const mk=z.data.marks.find(m=>m.c===k);if(mk){if(k===z.data.goal)solve(z,pid);else{z.data.pos=z.data.start;setTimeout(()=>W.act(z.id,'bump',z.data.start),500);fail(pid,t,'طلعة غلط! رجع للبداية')}return}
   dirty()}
- else if(a.t==='fire'&&t==='radar'){const d=z.data,e=d.exp[d.prog],now=performance.now();if([-380,-200,-60,80].some(o=>radarSector(d,now+o)===e)){d.prog++;d.ok=now;if(d.prog>=d.exp.length)solve(z,pid);else{sfx.chain();dirty()}}else{d.prog=0;d.flash=now;fail(pid,t,'مش وقتها! رجع العدّ من الأول')}}
+ else if(a.t==='fire'&&t==='radar'){const d=z.data,e=d.exp[d.prog],now=performance.now();const tp=now-Math.max(0,Math.min(1500,+a.lat||0))-40;let hit=false;for(let o=-350;o<=150;o+=25)if(radarSector(d,tp+o)===e){hit=true;break}if(hit){d.prog++;d.ok=now;if(d.prog>=d.exp.length)solve(z,pid);else{sfx.chain();dirty()}}else{d.prog=0;d.flash=now;fail(pid,t,'مش وقتها! رجع العدّ من الأول')}}
  else if(a.t==='flip'&&t==='laser'){const d=z.data,i=a.i|0;if(i<0||i>=d.mc.length)return;if(d.locked.includes(d.mc[i])){d.zap=performance.now();fail(pid,t,'لمس مراية مكهربة!');return}d.st[i]^=1;sfx.key();if(slotK(laserTrace(d).out)===d.goal)solve(z,pid);else dirty()}
  else if(a.t==='slide'&&t==='slide'){const d=z.data,i=a.i|0,e=d.b.indexOf(-1);const adj=(Math.abs(i-e)===3)||(Math.abs(i-e)===1&&((i/3)|0)===((e/3)|0));if(i<0||i>8||!adj)return;d.b[e]=d.b[i];d.b[i]=-1;sfx.key();if(slideOk(d))solve(z,pid);else dirty()}
  else if(a.t==='rot'&&t==='rings'){const d=z.data,r=a.r|0;if(r<0||r>=d.R)return;d.rot[r]=(d.rot[r]+(a.d>0?5:1))%6;sfx.key()}
  else if(a.t==='lock'&&t==='rings'){const d=z.data;if(d.rot.every((v,r)=>v===d.tg[r]))solve(z,pid);else fail(pid,t,'الحلقات مش مزبوطة')}
  else if(a.t==='valve'&&t==='pressure'){const i=a.i|0;if(i<0||i>3)return;if(a.on)z.data.held[i]=performance.now();else delete z.data.held[i]}
- else if(a.t==='catch'&&t==='sparks'){const d=z.data,now=performance.now();const good=s=>s&&s.g===d.tg&&s.c===d.tc&&now<=s.until+400;
-  if(good(d.cur)||good(d.prev)){if(d.cur&&good(d.cur))d.cur.caught=1;else if(d.prev)d.prev.caught=1;d.prog++;d.ok=now;if(d.prog>=d.need)solve(z,pid);else{sfx.chain();dirty()}}
+ else if(a.t==='catch'&&t==='sparks'){const d=z.data,now=performance.now();const tp=now-Math.max(0,Math.min(1500,+a.lat||0))-40;const good=s=>s&&!s.caught&&s.g===d.tg&&s.c===d.tc&&tp>=s.at-150&&tp<=s.until+300;
+  const hit=[d.cur,d.prev,d.prev2].find(good);if(hit){hit.caught=1;d.prog++;d.ok=now;if(d.prog>=d.need)solve(z,pid);else{sfx.chain();dirty()}}
   else{if(z.lvl===2)d.prog=0;d.flash=now;fail(pid,t,'مسك الشرارة الغلط')}}
  else if(a.t==='code'&&t==='count'){if(String(parseInt(a.v,10))===z.ans)solve(z,pid);else fail(pid,t,'العدد غلط')}
  else if(a.t==='pick'&&t==='seal'){const i=a.i|0;if(i<0||i>=z.data.opts.length||z.data.tried.includes(i))return;W.act(z.id,'pick',i===z.ans);if(i===z.ans)solve(z,pid);else{z.data.tried.push(i);fail(pid,t,'الختم غلط')}}
@@ -976,7 +977,7 @@ function solve(z,pid){const now=performance.now();const R=G.room;z.solved=true;z
  else if(z.reward)say('n_item',{prio:2});
  else if(combo)say('n_combo',{prio:2});
  else say(pick(SOLVE_POOL),{prio:1});
- if(R.puzzles.every(q=>q.solved)){W.unlock();if(R.tut)setTimeout(roomDone,1300)}
+ if(R.puzzles.every(q=>q.solved)){W.unlock();if(R.tut)setTimeout(roomDone,1300);else setTimeout(doorCheck,700)}
  dirty()}
 function fail(pid,type,msg,secs,vo){const p=G.players[pid];const R=G.room;p.errs++;
  const sec=R.tut?0:Math.round((secs||PEN[type]||20)*DIFFS[G.diff].pen);if(sec){G.timeLeft-=sec;G.lastPen=sec}
@@ -987,17 +988,20 @@ function fail(pid,type,msg,secs,vo){const p=G.players[pid];const R=G.room;p.errs
 /* live puzzles keep moving on the host, every frame */
 function tickPuzzles(now,dt){const R=G.room;if(!(G.phase==='play'&&G.running&&R&&!R.done))return;
  R.puzzles.forEach(z=>{if(z.solved)return;const d=z.data;const open=!!z.availAt;
-  if(z.type==='pressure'){if(!open)return;Object.keys(d.held).forEach(k=>{if(now-d.held[k]>8000)delete d.held[k]});
+  if(z.type==='pressure'){if(!open)return;{const cp=G.players[z.ctrl];if(!cp||(!cp.online&&!cp.local))d.held={}}
    let v=d.rise;Object.keys(d.held).forEach(k=>{v+=(+k===d.v)?-24:10});d.p=Math.max(0,Math.min(100,d.p+v*dt));
    if(d.p>=100){d.p=55;d.inb=0;d.held={};d.burst=now;W.shake(.5);fail(z.ctrl,'pressure','الضغط انفجر!',0,'n_burst');return}
    if(d.p>=d.band[0]&&d.p<=d.band[1]){d.inb+=dt;if(d.inb>=d.need){d.held={};solve(z,z.ctrl)}}else d.inb=0}
   else if(z.type==='sparks'){if(!open)return;if(!d.next)d.next=now+800;
-   if(d.cur&&now>d.cur.until){d.prev=d.cur;d.cur=null}
+   if(d.cur&&now>d.cur.until){d.prev2=d.prev;d.prev=d.cur;d.cur=null}
    if(now>=d.next){d.since++;let g,c;const r=Math.random();if(d.since>=4||r<.28){g=d.tg;c=d.tc;d.since=0}else if(r<.5){g=d.tg;c=pick(d.cols.filter(x=>x!==d.tc))}else if(r<.72){g=pick(d.gl.filter(x=>x!==d.tg));c=d.tc}else{g=pick(d.gl.filter(x=>x!==d.tg));c=pick(d.cols)}
-    if(g===d.tg&&c===d.tc)d.since=0;d.prev=d.cur;d.cur={g,c,at:now,until:now+d.I*.7,x:Math.random()*2-1,y:Math.random()*2-1};d.next=now+d.I}}})}
+    if(g===d.tg&&c===d.tc)d.since=0;if(d.cur){d.prev2=d.prev;d.prev=d.cur}d.cur={g,c,at:now,until:now+d.I*.7,x:Math.random()*2-1,y:Math.random()*2-1};d.next=now+d.I}}})}
 function setTorch(pid,x,y){const R=G.room;if(!R||!R.wall||R.wall.pid!==pid)return;W.torch(x,y)}
 function holdCount(){const act=activePlayers();const set=new Set(act.filter(p=>p.hold).map(p=>p.id));if(set.size)act.filter(p=>p.local).forEach(p=>set.add(p.id));return set.size}
-function holdCheck(now){const R=G.room;if(!(G.phase==='play'&&G.running&&R&&R.door&&R.door.inserted&&R.door.needHold&&!R.done))return;
+/* the door opens once the item is in AND every puzzle is solved */
+function doorCheck(){const R=G.room;if(!R||R.done||!R.door||!R.door.inserted||R.door.armed)return;if(R.puzzles.some(q=>!q.solved))return;
+ R.door.armed=true;if(R.door.needHold){toast('القفل الأخير: كلكم اضغطوا مع بعض!','chain');say('n_hold',{prio:3});W.holdMode(true);dirty()}else roomDone()}
+function holdCheck(now){const R=G.room;if(!(G.phase==='play'&&G.running&&R&&R.door&&R.door.armed&&R.door.needHold&&!R.done))return;
  R.door.req=Math.max(1,Math.min(3,activePlayers().filter(p=>p.online||p.local).length));const n=Math.min(holdCount(),R.door.req);
  if(n>=R.door.req){if(!R.door.holdStart)R.door.holdStart=now;if(now-R.door.holdStart>1300){W.holdLevel(1);roomDone();return}}
  else{if(R.door.holdStart&&now-R.door.holdStart>250&&n>0)say('n_hold_fail',{prio:1});R.door.holdStart=0}
@@ -1101,10 +1105,10 @@ function renderHUD(){const R=G.room;if(!R)return;
  document.documentElement.style.setProperty('--accent',R.theme.accent);
  $('#hud-turn').textContent=(G.mode==='two'?TEAM[G.teamTurn]+' · ':'')+(R.tut?'قبل ما نبلّش':'الغرفة '+AR(R.idx+1)+' من '+AR(ROOMS));
  $('#hud-room').textContent=R.theme.name;
- const hp=$('#holdpill');if(R.door&&R.door.inserted&&R.door.needHold&&!R.done){hp.hidden=false;hp.textContent='اضغطوا مع بعض: '+AR(R.door.holdN||0)+' من '+AR(R.door.req)}else hp.hidden=true;
+ const hp=$('#holdpill');if(R.door&&R.door.armed&&R.door.needHold&&!R.done){hp.hidden=false;hp.textContent='اضغطوا مع بعض: '+AR(R.door.holdN||0)+' من '+AR(R.door.req)}else hp.hidden=true;
  const box=$('#hud-players');box.innerHTML='';
  activePlayers().forEach(p=>{const bag=G.bags[p.id]||[];const torch=R.wall&&R.wall.pid===p.id&&!puzzleSolved(R.wall.puzzleId);
-  const st=!p.online?'مش متصل':(p.hold&&R.door&&R.door.inserted&&!R.done)?'ضاغط':bag.length?'معه: '+bag.join('، '):torch?'معه الشعلة':(p.solves?'حل '+AR(p.solves):'جاهز');
+  const st=!p.online?'مش متصل':(p.hold&&R.door&&R.door.armed&&!R.done)?'ضاغط':bag.length?'معه: '+bag.join('، '):torch?'معه الشعلة':(p.solves?'حل '+AR(p.solves):'جاهز');
   const el=document.createElement('div');el.className='hp'+((bag.length||torch)?' carry':'')+(p.online?'':' off');el.innerHTML='<i style="background:'+avColor(p.name)+'"></i><div><b></b><span></span></div>';el.querySelector('b').textContent=p.name;el.querySelector('span').textContent=st;box.appendChild(el)})}
 function displayUpdate(now){if(!W.ready())return;const R=G.room;const mini=$('#hud-mini');
  if(G.phase==='lobby'||!R){W.setTime(ROOMCODE||'····','idle',null);return}
@@ -1673,7 +1677,7 @@ function ctrlHTML(c,L){
   case 'slide':return '<div class="card ctrl">'+head+'<p class="sub">اضغط على بلاطة جنب الفراغ عشان تزحلقها.</p><div class="sgrid play">'+c.b.map((g,i)=>g<0?'<div class="blank"></div>':'<button type="button" data-a="slide" data-id="'+c.id+'" data-i="'+i+'" aria-label="بلاطة">'+gSVG(g)+'</button>').join('')+'</div></div>';
   case 'rings':return '<div class="card ctrl">'+head+'<p class="sub">لفّ كل حلقة، وشوف الحلقات عالشاشة الكبيرة. لما تصير مزبوطة ثبّت.</p><div class="rrows">'+range(c.R).map(r=>'<div><span>الحلقة '+ringName(r,c.R)+'</span><button type="button" data-a="rot" data-id="'+c.id+'" data-r="'+r+'" data-d="1" aria-label="لف">↻</button><button type="button" data-a="rot" data-id="'+c.id+'" data-r="'+r+'" data-d="-1" aria-label="لف بالعكس">↺</button></div>').join('')+'</div><button type="button" class="btn" data-a="rlock" data-id="'+c.id+'">ثبّت</button></div>';
   case 'valves':return '<div class="card ctrl">'+head+'<p class="sub">اضغط مطوّل على صمّام عشان تفتحه. الضغط عالشاشة الكبيرة: خلّوه بالأخضر.</p><div class="valves">'+range(4).map(i=>'<button type="button" data-valve="'+i+'" data-id="'+c.id+'">'+LET[i]+'</button>').join('')+'</div></div>';
-  case 'door':return '<div class="card ctrl"><h4>باب الطلعة</h4><button type="button" class="btn" data-a="door" data-id="'+c.id+'">ركّب «'+esc(c.item)+'» بالباب</button></div>';
+  case 'door':return '<div class="card ctrl door"><h4>معك «'+esc(c.item)+'»</h4><p class="sub">'+(c.left&&c.left.length?'ركّبه هلأ، والباب بيفتح لحاله لما تخلصوا: '+c.left.map(esc).join('، ')+'.':'كل الألغاز انحلّت. ركّبه وافتحوا الباب!')+'</p><button type="button" class="btn" data-a="door" data-id="'+c.id+'">ركّب «'+esc(c.item)+'» بالباب</button></div>';
   case 'torch':return '<div class="card ctrl"><h4>معك الشعلة</h4><p class="sub">حرّك إصبعك هون. الضو بيمشي على حيطان الغرفة عالشاشة الكبيرة، وفي رسمة مخبّاية ما بتبيّن إلا بالشعلة.</p><div class="torchpad" data-pad><span class="padot" style="left:'+(L.tx*100)+'%;top:'+(L.ty*100)+'%"></span></div></div>';
  }return ''}
 function bagHTML(v,L){const bag=v.bag;return '<div class="card"><div class="bag">'+bag.map(it=>'<button type="button" class="item" data-a="sel" data-item="'+esc(it)+'" aria-pressed="'+(L.sel===it)+'">'+esc(it)+'</button>').join('')+'</div>'+(L.sel&&bag.includes(L.sel)?'<p class="sub">لمين بدك تبعت «'+esc(L.sel)+'»؟</p><div class="mates">'+(v.mates||[]).map(m=>'<button type="button" data-a="give" data-to="'+esc(m.id)+'">'+esc(m.n)+'</button>').join('')+'</div>':'<p class="sub">اضغط على الغرض عشان تبعته لحدا.</p>')+'</div>'}
@@ -1700,6 +1704,7 @@ function phoneHTML(v,L){
  const ctrls=v.ctrls||[],cards=v.cards||[],bag=v.bag||[];
  if(ctrls.length)h+='<div class="ph-sec">مهمتك</div>'+ctrls.map(c=>ctrlHTML(c,L)).join('');
  if(cards.length)h+='<div class="ph-sec">اللي معك</div>'+cardsHTML(cards,L);
+ if(v.doorWait)h+='<div class="card doorwait"><h4>«'+esc(v.doorWait.item)+'» مركّب بالباب ✓</h4><p class="sub">الباب بيفتح لما تخلصوا: '+v.doorWait.left.map(esc).join('، ')+'</p></div>';
  if(bag.length)h+='<div class="ph-sec">الشنطة</div>'+bagHTML(v,L);
  if(!ctrls.length&&!cards.length&&!bag.length&&!v.hold)h+=big('ساعد غيرك','ما معك شي هلأ. اسأل مين محتاج مساعدة، وركّز بالشاشة.');
  return h+'</div>'}
@@ -1709,7 +1714,8 @@ function makeDeck(box,getView,getLocal,io,opts){opts=opts||{};
  function render(force){const v=getView();if(!v)return;const L=getLocal();
   if(v.fx!=null){if(lastFx!==null&&v.fx!==lastFx)playFx(v.fk);lastFx=v.fx}
   (v.cards||[]).forEach(c=>{if(!(c.key in L.seen)){L.seen[c.key]=1;if(c.nw){L.fresh[c.key]=1;L.tab=c.key;if(opts.fx!==false)vib([40,40,80]);setTimeout(()=>{delete L.fresh[c.key];render(true)},9000)}}});
-  const s=JSON.stringify(Object.assign({},v,{time:v.time<60?1:0,fx:0,fk:0,live:0}))+JSON.stringify([L.code,L.seq,L.sel,L.sw,L.clk,L.pat,L.tab,L.fresh,L.holding]);
+  if(v.pong&&v.pong!==L.pongSeen){L.pongSeen=v.pong;const r=performance.now()-v.pong;if(r>0&&r<5000)L.rtt=L.rtt?L.rtt*.6+r*.4:r}
+  const s=JSON.stringify(Object.assign({},v,{time:v.time<60?1:0,fx:0,fk:0,live:0,pong:0}))+JSON.stringify([L.code,L.seq,L.sel,L.sw,L.clk,L.pat,L.tab,L.fresh,L.holding]);
   if(!force&&s===sig){updTimer();return}
   if(lock){pending=true;return}
   sig=s;const st=box.scrollTop;box.innerHTML=phoneHTML(v,L);box.scrollTop=st;bind();updTimer()}
@@ -1742,8 +1748,8 @@ function makeDeck(box,getView,getLocal,io,opts){opts=opts||{};
    case 'lt':{const n=+b.dataset.n||3;const s=L.seq[id]||(L.seq[id]=[]);s.push(b.dataset.c);sfx.key();if(s.length>=n){io.act({t:'word',id,v:s.slice(0,n)});L.seq[id]=[]}break}
    case 'mv':vib(15);sfx.key();io.act({t:'mv',id,d:b.dataset.d});break;
    case 'seal':vib(20);io.act({t:'pick',id,i:+b.dataset.i});break;
-   case 'fire':vib(40);io.act({t:'fire',id});break;
-   case 'catch':vib(40);io.act({t:'catch',id});break;
+   case 'fire':vib(40);io.act({t:'fire',id,lat:Math.round((L.rtt||0)/2)});break;
+   case 'catch':vib(40);io.act({t:'catch',id,lat:Math.round((L.rtt||0)/2)});break;
    case 'flip':vib(15);io.act({t:'flip',id,i:+b.dataset.i});break;
    case 'slide':vib(15);io.act({t:'slide',id,i:+b.dataset.i});break;
    case 'rot':sfx.key();io.act({t:'rot',id,r:+b.dataset.r,d:+b.dataset.d});break;
@@ -1918,6 +1924,8 @@ let PTOK='';try{PTOK=localStorage.getItem('silsila-token')||''}catch(e){}if(!PTO
 const PST={n:'',k:PTOK,q:[],fl:null,hd:0};
 let WL=null;async function keepAwake(){try{if('wakeLock' in navigator&&!WL&&document.visibilityState==='visible'){WL=await navigator.wakeLock.request('screen');WL.addEventListener('release',()=>{WL=null})}}catch(e){}}let PSEQ=Date.now();const PL=newLocal();
 function phoneSend(){if(NET.mode==='mq'&&NET.mq){try{NET.mq.publish(NET.mqBase+'/p/'+PTOK,JSON.stringify(PST),{qos:0})}catch(e){}return}if(NET.mode==='fb'&&NET.me){NET.me.set({j:JSON.stringify(PST),off:0,t:Date.now()}).catch(()=>{});return}if(NET.mode==='room'&&NET.nr)NET.nr.presence(PST).catch(()=>{});else if(PCONN&&PCONN.open){try{PCONN.send(PST)}catch(e){}}}
+/* measure the round trip so timing puzzles (radar, sparks) can allow for network delay */
+setInterval(()=>{if(PV&&PV.run&&typeof PTOK!=='undefined'){PST.q.push({t:'ping',c:Math.round(performance.now()),s:++PSEQ});PST.q=PST.q.slice(-6);phoneSend()}},4000);
 const phoneDeck=makeDeck($('#phone'),()=>{if(!PV)return null;const v=Object.assign({},PV);v.live=()=>PV.time-(PV.run?(performance.now()-PVAT)/1000:0);return v},()=>PL,
  {act:a=>{PST.q.push(Object.assign({},a,{s:++PSEQ}));PST.q=PST.q.slice(-6);phoneSend()},torch:(x,y)=>{PST.fl={x:Math.round(x*1000)/1000,y:Math.round(y*1000)/1000};phoneSend()},hold:b=>{PST.hd=b?1:0;phoneSend()}});
 function phoneScreen(html){const box=$('#phone');box.hidden=false;showOverlay(null);box.innerHTML='<div class="ph">'+html+'</div>'}
